@@ -1,0 +1,2 @@
+# GoTradingBot
+GoTradingBot
