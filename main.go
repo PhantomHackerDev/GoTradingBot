@@ -1,32 +1,92 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
+	"os"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/joho/godotenv"
 )
 
+// CMCResponse represents the response structure from CoinMarketCap API
+type CMCResponse struct {
+	Data []struct {
+		Name  string `json:"name"`
+		Quote map[string]struct {
+			Price float64 `json:"price"`
+		} `json:"quote"`
+	} `json:"data"`
+}
+
+type TokenPrice struct {
+	Name  string  `json:"name"`
+	Price float64 `json:"price"`
+}
+
+type Response struct {
+	Tokens []TokenPrice `json:"tokens"`
+}
+
 func main() {
-	bot, err := tgbotapi.NewBotAPI("7675455592:AAH29iTTo1t1Jzhha1qjnMB6NtKxusRGmTk")
+	// Load environment variables from .env file
+	err := godotenv.Load()
 	if err != nil {
-		log.Panic(err)
+		log.Fatalf("Error loading .env file: %v", err)
 	}
 
-	bot.Debug = true // Enable debugging mode to log requests and responses
+	cmcAPIKey := os.Getenv("COINMARKETCAP_API_KEY") // Get your CoinMarketCap API Key from .env
 
-	log.Printf("Authorized on account %s", bot.Self.UserName)
-
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-
-	updates := bot.GetUpdatesChan(u)
-
-	for update := range updates {
-		if update.Message != nil { // Check if we got a message
-			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Hello, "+update.Message.From.FirstName+"!")
-			bot.Send(msg)
-		}
+	prices, err := getPrices(cmcAPIKey) // Fetch prices for multiple cryptocurrencies
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	// Convert the prices to JSON and print
+	response := Response{Tokens: prices}
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(string(jsonData))
+}
+
+// Fetch the current prices of multiple cryptocurrencies from CoinMarketCap
+func getPrices(apiKey string) ([]TokenPrice, error) {
+	url := "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-CMC_PRO_API_KEY", apiKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error fetching prices: %s", resp.Status)
+	}
+
+	var cmcResponse CMCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&cmcResponse); err != nil {
+		return nil, err
+	}
+
+	// Prepare the response with token names and prices
+	var prices []TokenPrice
+	for _, token := range cmcResponse.Data {
+		prices = append(prices, TokenPrice{
+			Name:  token.Name,
+			Price: token.Quote["USD"].Price,
+		})
+	}
+
+	return prices, nil
 }
