@@ -1,4 +1,4 @@
-package main
+package real
 
 import (
 	"encoding/json"
@@ -6,12 +6,11 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/robfig/cron/v3"
 )
 
-// CMCResponse represents the response structure from CoinMarketCap API
 type CMCResponse struct {
 	Data []struct {
 		Name  string `json:"name"`
@@ -38,26 +37,29 @@ func main() {
 
 	cmcAPIKey := os.Getenv("COINMARKETCAP_API_KEY")
 
-	for {
+	c := cron.New()
+	c.AddFunc("@every 1m", func() {
 		prices, err := getPrices(cmcAPIKey)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			return
 		}
 
 		response := Response{Tokens: prices}
 		jsonData, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			return
 		}
 
 		fmt.Println(string(jsonData))
+	})
+	c.Start()
 
-		// Wait for 60 seconds before fetching data again
-		time.Sleep(60 * time.Second)
-	}
+	// Keep the program running
+	select {}
 }
 
-// Fetch the current prices of multiple cryptocurrencies from CoinMarketCap
 func getPrices(apiKey string) ([]TokenPrice, error) {
 	url := "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest"
 
